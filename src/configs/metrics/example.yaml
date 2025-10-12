@@ -1,6 +1,10 @@
-train: [] # metrics that are calculated during training
-inference: # metrics that are calculated during inference (eval)
-  - _target_: src.metrics.ArgmaxCERMetric
-    name: "CER_(Argmax)" # it is better to avoid spaces in names
-  - _target_: src.metrics.ArgmaxWERMetric
-    name: "WER_(Argmax)"
+train: []  # Метрики на тренировке
+inference:
+  - _target_: src.metrics.CERMetric
+    name: "CER_${decode.mode}"  # Имя зависит от decode.mode
+    text_encoder: ${text_encoder}
+    mode: ${decode.mode}
+  - _target_: src.metrics.WERMetric
+    name: "WER_${decode.mode}"
+    text_encoder: ${text_encoder}
+    mode: ${decode.mode}

@@ -10,7 +10,7 @@ pandas
 wandb
 comet_ml
 hydra-core
-
+torchaudio
 black
 isort
 pre-commit

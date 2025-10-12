@@ -1,0 +1,3 @@
+_target_: src.text.ctc_encoder.CTCTextEncoder
+use_bpe: false
+beam_width: ${decode.beam_width}

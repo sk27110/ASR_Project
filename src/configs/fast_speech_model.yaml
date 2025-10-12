@@ -1,6 +1,6 @@
 defaults:
   - decode: decode
-  - model: baseline
+  - model: fast_speech_model
   - writer: cometml
   - metrics: example
   - datasets: example

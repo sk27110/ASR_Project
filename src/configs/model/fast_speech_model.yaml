@@ -1,0 +1,4 @@
+_target_: src.model.FastSpeechModel
+n_feats: 128
+hidden: 128
+dropout: 0.2

@@ -1,0 +1,2 @@
+mode: beam_search   # можно поменять на "beam_search"
+beam_width: 1

@@ -1,0 +1,5 @@
+_target_: src.model.SpeechModel
+n_feats: 128
+dropout: 0.1
+rnn_hidden: 512
+num_rnn_layers: 5

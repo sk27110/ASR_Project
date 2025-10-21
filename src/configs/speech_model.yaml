@@ -1,0 +1,47 @@
+defaults:
+  - decode: decode
+  - model: speech_model
+  - writer: cometml_SpeechModel
+  - metrics: example
+  - datasets: example
+  - dataloader: SpeechModel
+  - transforms: example_only_instance
+  - text_encoder: text_encoder
+  - _self_
+
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 2e-4              # снижено — стабильнее для AMP и больших batch
+  weight_decay: 1e-3    # чуть сильнее L2-регуляризация, уменьшает переобучение
+  betas: [0.9, 0.98]
+  eps: 1e-8
+
+lr_scheduler:
+  _target_: torch.optim.lr_scheduler.OneCycleLR
+  max_lr: 2e-4          # синхронизировано с optimizer.lr
+  pct_start: 0.1        # дольше warmup для стабильности
+  anneal_strategy: cos
+  div_factor: 25
+  final_div_factor: 100
+  steps_per_epoch: ${trainer.epoch_len}
+  epochs: ${trainer.n_epochs}
+
+loss_function:
+  _target_: src.loss.CTCLossWrapper
+
+text_encoder:
+  _target_: src.text_encoder.CTCTextEncoder
+
+trainer:
+  log_step: 25
+  n_epochs: 60              # увеличено, чтобы OneCycle успел отработать
+  epoch_len: 400
+  device_tensors: ["spectrogram", "text_encoded"]
+  resume_from: null
+  device: auto
+  override: True
+  monitor: "min val_WER_${decode.mode}"
+  save_period: 5
+  early_stop: 15            # теперь действительно работает early stop по метрике
+  save_dir: "saved"
+  seed: 42                  # стабильный random seed

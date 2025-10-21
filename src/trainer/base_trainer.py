@@ -175,7 +175,7 @@ class BaseTrainer:
 
             # print logged information to the screen
             for key, value in logs.items():
-                self.logger.info(f"    {key:15s}: {value}")
+                self.logger.info(f"    {key: 15s}: {value}")
 
             # evaluate model performance according to configured metric,
             # save best checkpoint as model_best
@@ -336,19 +336,19 @@ class BaseTrainer:
                 stop_process = True
         return best, stop_process, not_improved_count
 
-    def move_batch_to_device(self, batch):
+    def move_batch_to_device(self, batch, non_blocking=False):
         """
         Move all necessary tensors to the device.
-
         Args:
-            batch (dict): dict-based batch containing the data from
-                the dataloader.
+            batch (dict): dict-based batch containing the data from the dataloader.
+            non_blocking (bool): use non_blocking transfer if possible (requires pinned memory)
         Returns:
-            batch (dict): dict-based batch containing the data from
-                the dataloader with some of the tensors on the device.
+            batch (dict): dict-based batch with tensors moved to device.
         """
         for tensor_for_device in self.cfg_trainer.device_tensors:
-            batch[tensor_for_device] = batch[tensor_for_device].to(self.device)
+            batch[tensor_for_device] = batch[tensor_for_device].to(
+                self.device, non_blocking=non_blocking
+            )
         return batch
 
     def transform_batch(self, batch):

@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 import torch
+from torch.cuda.amp import GradScaler, autocast
 
 from src.logger.utils import plot_spectrogram
 from src.metrics.tracker import MetricTracker
@@ -10,23 +11,12 @@ from src.trainer.base_trainer import BaseTrainer
 
 
 class Trainer(BaseTrainer):
-    """
-    Trainer class. Defines the logic of batch logging and processing.
-    Supports argmax and beam search decoding for predictions.
-    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.scaler = GradScaler()  # AMP grad scaler
 
     def process_batch(self, batch, metrics: MetricTracker):
-        """
-        Run batch through the model, compute metrics, compute loss,
-        and do training step (during training stage).
-
-        Args:
-            batch (dict): batch from dataloader
-            metrics (MetricTracker): metric tracker instance
-        Returns:
-            batch (dict): updated batch with outputs and losses
-        """
-        batch = self.move_batch_to_device(batch)
+        batch = self.move_batch_to_device(batch, non_blocking=True)  # теперь работает
         batch = self.transform_batch(batch)
 
         metric_funcs = (
@@ -36,52 +26,43 @@ class Trainer(BaseTrainer):
         if self.is_train:
             self.optimizer.zero_grad()
 
-        outputs = self.model(**batch)
-        batch.update(outputs)
+        # --- Forward pass с AMP ---
+        with autocast():
+            outputs = self.model(**batch)
+            batch.update(outputs)
+            all_losses = self.criterion(**batch)
+            batch.update(all_losses)
 
-        all_losses = self.criterion(**batch)
-        batch.update(all_losses)
-
+        # --- Backward pass с GradScaler ---
         if self.is_train:
-            batch["loss"].backward()
+            self.scaler.scale(batch["loss"]).backward()
             self._clip_grad_norm()
-            self.optimizer.step()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
             if self.lr_scheduler is not None:
                 self.lr_scheduler.step()
 
-        # update metrics for each loss
+        # --- Update metrics ---
         for loss_name in getattr(self.config.writer, "loss_names", []):
             metrics.update(loss_name, batch[loss_name].item())
-
-        # update task metrics
         for met in metric_funcs:
             metrics.update(met.name, met(**batch))
 
         return batch
 
     def _log_batch(self, batch_idx, batch, mode="train"):
-        """
-        Log spectrograms and predictions.
-        """
         self.log_spectrogram(**batch)
         if mode != "train":
             self.log_predictions(**batch)
 
     def log_spectrogram(self, spectrogram, **batch):
-        """
-        Log a single spectrogram image.
-        """
         spectrogram_for_plot = spectrogram[0].detach().cpu()
         image = plot_spectrogram(spectrogram_for_plot)
-        self.writer.add_image(
-            "spectrogram", image
-        )  # закомментировано, чтобы не было ошибок
+        self.writer.add_image("spectrogram", image)  # временно отключено
 
-    # В методе log_predictions в trainer.py
     def log_predictions(
         self, text, log_probs, log_probs_length, audio_path, examples_to_log=10, **batch
     ):
-        # Convert text to list of strings if it's a tensor
         if torch.is_tensor(text):
             text = [self.text_encoder.decode(t) for t in text]
 
@@ -95,14 +76,14 @@ class Trainer(BaseTrainer):
             pred_texts = self.text_encoder.ctc_prefix_beam_search_decode(
                 log_probs, log_probs_length
             )
-        else:  # argmax
+        else:
             argmax_inds = torch.argmax(log_probs, dim=-1)
             pred_texts = [
                 self.text_encoder.ctc_decode(inds[:l])
                 for inds, l in zip(argmax_inds, log_probs_length)
             ]
 
-        # For comparison, also get raw argmax decoding
+        # raw argmax
         argmax_inds = torch.argmax(log_probs, dim=-1)
         raw_texts = [
             self.text_encoder.ctc_decode(inds[:l])

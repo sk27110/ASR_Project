@@ -25,7 +25,7 @@ class CERMetric(BaseMetric):
             for pred_text, target_text in zip(preds, text):
                 target_text = self.text_encoder.normalize_text(target_text)
                 cers.append(calc_cer(target_text, pred_text))
-        else:  # argmax
+        else:
             predictions = torch.argmax(log_probs.cpu(), dim=-1).numpy()
             lengths = log_probs_length.cpu().numpy()
             for log_prob_vec, length, target_text in zip(predictions, lengths, text):

@@ -4,7 +4,7 @@ train:
     sample_rate: 16000
     n_fft: 400
     hop_length: 160
-    n_mels: 128   # <- ОБЯЗАТЕЛЬНО
+    n_mels: 128
   audio:
     _target_: torchvision.transforms.v2.Compose
     transforms:
@@ -16,4 +16,4 @@ inference:
     sample_rate: 16000
     n_fft: 400
     hop_length: 160
-    n_mels: 128   # <- ОБЯЗАТЕЛЬНО
+    n_mels: 128

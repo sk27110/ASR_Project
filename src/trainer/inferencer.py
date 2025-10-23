@@ -7,11 +7,11 @@ from src.trainer.base_trainer import BaseTrainer
 
 class Inferencer(BaseTrainer):
     """
-    Inferencer (Like Trainer but for Inference) class
+    Inference-only runner similar to a Trainer but without optimization.
 
-    The class is used to process data without
-    the need of optimizers, writers, etc.
-    Required to evaluate the model on the dataset, save predictions, etc.
+    This class is used to evaluate a model on given datasets, compute metrics,
+    and optionally save predictions. It omits training-specific logic such as
+    optimizers, schedulers, or gradient steps.
     """
 
     def __init__(
@@ -30,24 +30,15 @@ class Inferencer(BaseTrainer):
         Initialize the Inferencer.
 
         Args:
-            model (nn.Module): PyTorch model.
-            config (DictConfig): run config containing inferencer config.
-            device (str): device for tensors and model.
-            dataloaders (dict[DataLoader]): dataloaders for different
-                sets of data.
-            text_encoder (CTCTextEncoder): text encoder.
-            save_path (str): path to save model predictions and other
-                information.
-            metrics (dict): dict with the definition of metrics for
-                inference (metrics[inference]). Each metric is an instance
-                of src.metrics.BaseMetric.
-            batch_transforms (dict[nn.Module] | None): transforms that
-                should be applied on the whole batch. Depend on the
-                tensor name.
-            skip_model_load (bool): if False, require the user to set
-                pre-trained checkpoint path. Set this argument to True if
-                the model desirable weights are defined outside of the
-                Inferencer Class.
+            model (nn.Module): PyTorch model used for inference.
+            config (DictConfig): Experiment configuration.
+            device (str): Target device for tensors and model.
+            dataloaders (dict[str, DataLoader]): DataLoaders for evaluation datasets.
+            text_encoder (CTCTextEncoder): Text encoder for ASR decoding.
+            save_path (Path): Directory to save model predictions.
+            metrics (dict[str, list[BaseMetric]] | None): Metrics definitions for inference.
+            batch_transforms (dict[str, nn.Module] | None): Optional transforms applied per batch.
+            skip_model_load (bool): If False, requires a pretrained checkpoint path.
         """
         assert (
             skip_model_load or config.inferencer.get("from_pretrained") is not None
@@ -55,23 +46,15 @@ class Inferencer(BaseTrainer):
 
         self.config = config
         self.cfg_trainer = self.config.inferencer
-
         self.device = device
-
         self.model = model
         self.batch_transforms = batch_transforms
-
         self.text_encoder = text_encoder
-
-        # define dataloaders
-        self.evaluation_dataloaders = {k: v for k, v in dataloaders.items()}
-
-        # path definition
-
+        self.evaluation_dataloaders = dict(dataloaders)
         self.save_path = save_path
-
-        # define metrics
         self.metrics = metrics
+
+        # Initialize metric tracker if metrics are provided
         if self.metrics is not None:
             self.evaluation_metrics = MetricTracker(
                 *[m.name for m in self.metrics["inference"]],
@@ -80,17 +63,16 @@ class Inferencer(BaseTrainer):
         else:
             self.evaluation_metrics = None
 
+        # Load pretrained model weights if required
         if not skip_model_load:
-            # init model
             self._from_pretrained(config.inferencer.get("from_pretrained"))
 
     def run_inference(self):
         """
-        Run inference on each partition.
+        Run inference on all dataset partitions.
 
         Returns:
-            part_logs (dict): part_logs[part_name] contains logs
-                for the part_name partition.
+            dict[str, dict]: A mapping from partition name to computed logs.
         """
         part_logs = {}
         for part, dataloader in self.evaluation_dataloaders.items():
@@ -100,82 +82,67 @@ class Inferencer(BaseTrainer):
 
     def process_batch(self, batch_idx, batch, metrics, part):
         """
-        Run batch through the model, compute metrics, and
-        save predictions to disk.
+        Process a single batch during inference.
 
-        Save directory is defined by save_path in the inference
-        config and current partition.
+        This method moves the batch to the target device, applies optional
+        transformations, performs a forward pass, updates metrics, and
+        optionally saves predictions to disk.
 
         Args:
-            batch_idx (int): the index of the current batch.
-            batch (dict): dict-based batch containing the data from
-                the dataloader.
-            metrics (MetricTracker): MetricTracker object that computes
-                and aggregates the metrics. The metrics depend on the type
-                of the partition (train or inference).
-            part (str): name of the partition. Used to define proper saving
-                directory.
+            batch_idx (int): Current batch index.
+            batch (dict): Input batch from DataLoader.
+            metrics (MetricTracker | None): Metric tracker instance.
+            part (str): Dataset partition name (e.g., "test", "dev").
+
         Returns:
-            batch (dict): dict-based batch containing the data from
-                the dataloader (possibly transformed via batch transform)
-                and model outputs.
+            dict: Updated batch containing model outputs.
         """
-        # TODO change inference logic so it suits ASR assignment
-        # and task pipeline
-
+        # Move batch to device and apply optional transformations
         batch = self.move_batch_to_device(batch)
-        batch = self.transform_batch(batch)  # transform batch on device -- faster
+        batch = self.transform_batch(batch)
 
+        # Forward pass through the model
         outputs = self.model(**batch)
         batch.update(outputs)
 
+        # Update evaluation metrics
         if metrics is not None:
             for met in self.metrics["inference"]:
                 metrics.update(met.name, met(**batch))
 
-        # Some saving logic. This is an example
-        # Use if you need to save predictions on disk
-
+        # Save predictions to disk (example logic)
         batch_size = batch["logits"].shape[0]
         current_id = batch_idx * batch_size
 
         for i in range(batch_size):
-            # clone because of
-            # https://github.com/pytorch/pytorch/issues/1995
             logits = batch["logits"][i].clone()
             label = batch["labels"][i].clone()
             pred_label = logits.argmax(dim=-1)
-
             output_id = current_id + i
 
-            output = {
-                "pred_label": pred_label,
-                "label": label,
-            }
+            output = {"pred_label": pred_label, "label": label}
 
             if self.save_path is not None:
-                # you can use safetensors or other lib here
                 torch.save(output, self.save_path / part / f"output_{output_id}.pth")
 
         return batch
 
     def _inference_part(self, part, dataloader):
         """
-        Run inference on a given partition and save predictions
+        Perform inference on a single dataset partition.
 
         Args:
-            part (str): name of the partition.
-            dataloader (DataLoader): dataloader for the given partition.
-        Returns:
-            logs (dict): metrics, calculated on the partition.
-        """
+            part (str): Partition name (e.g., "validation", "test").
+            dataloader (DataLoader): DataLoader for the given partition.
 
+        Returns:
+            dict: Aggregated evaluation metrics for the partition.
+        """
         self.is_train = False
         self.model.eval()
-
         self.evaluation_metrics.reset()
 
-        # create Save dir
+        # Ensure output directory exists
         if self.save_path is not None:
             (self.save_path / part).mkdir(exist_ok=True, parents=True)
 
@@ -185,7 +152,7 @@ class Inferencer(BaseTrainer):
                 desc=part,
                 total=len(dataloader),
             ):
-                batch = self.process_batch(
+                self.process_batch(
                     batch_idx=batch_idx,
                     batch=batch,
                     part=part,

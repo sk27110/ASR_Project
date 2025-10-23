@@ -1,7 +1,7 @@
-train: []  # Метрики на тренировке
+train: []
 inference:
   - _target_: src.metrics.CERMetric
-    name: "CER_${decode.mode}"  # Имя зависит от decode.mode
+    name: "CER_${decode.mode}"
     text_encoder: ${text_encoder}
     mode: ${decode.mode}
   - _target_: src.metrics.WERMetric

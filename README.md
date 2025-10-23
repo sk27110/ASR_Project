@@ -1,18 +1,16 @@
 # Automatic Speech Recognition (ASR) with PyTorch
 
-<p align="center">
-  <a href="#about">About</a> •
-  <a href="#installation">Installation</a> •
-  <a href="#how-to-use">How To Use</a> •
-  <a href="#credits">Credits</a> •
-  <a href="#license">License</a>
-</p>
+## Кочетков Александр, Падии 3
 
-## About
+### Результаты
+https://wandb.ai/kfloddroffff-national-research-university-higher-school-/SpeechModel_librispeech100/reports/ASR-Project--VmlldzoxNDgwODA0OQ?accessToken=jgvnfshyik4rxda9nn6buk3pz786a2yfbb5b3xjbo3bqnzdbnx0cmrwd66w9s5ns
 
-This repository contains a template for solving ASR task with PyTorch. This template branch is a part of the [HSE DLA course](https://github.com/markovka17/dla) ASR homework. Some parts of the code are missing (or do not follow the most optimal design choices...) and students are required to fill these parts themselves (as well as writing their own models, etc.).
+Из проблем:
 
-See the task assignment [here](https://github.com/markovka17/dla/tree/2024/hw1_asr).
+1) В коллабе не достаточно бесплатных вычислительных единиц для хорошего обучения.
+2) Лосс функция на тесте и валидации ведет себя очень нестабильно.
+
+Если есть какие-то комментарии, как можно решить проблемы -- можно написать в личку @Alexandr_Kochetkov или на почту sashakoch27@gmail.com
 
 ## Installation
 

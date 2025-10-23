@@ -5,11 +5,8 @@ import torch.nn.functional as F
 
 class SpeechModel(nn.Module):
     """
-    DeepSpeech2-подобная модель с улучшениями для LibriSpeech 100h.
-    - Conv frontend: 2 слоя, 64→128 каналов
-    - RNN backend: bidirectional GRU + LayerNorm
-    - Dropout для регуляризации
-    - Выход: log_probs для CTC
+    DeepSpeech2-подобная модель с Conv-фронтендом, двунаправленным GRU-бэкендом
+    и классификатором для задачи CTC.
     """
 
     def __init__(
@@ -17,7 +14,6 @@ class SpeechModel(nn.Module):
     ):
         super().__init__()
 
-        # --- Conv frontend ---
         self.conv = nn.Sequential(
             nn.Conv2d(1, 64, kernel_size=3, stride=2, padding=1),
             nn.BatchNorm2d(64),
@@ -27,10 +23,8 @@ class SpeechModel(nn.Module):
             nn.Hardtanh(0, 20, inplace=True),
         )
 
-        # Conv output features
-        self._n_feats_out = n_feats // (2 * 2)  # stride=2 дважды
+        self._n_feats_out = n_feats // (2 * 2)
 
-        # --- RNN backend ---
         rnn_input_size = 128 * self._n_feats_out
         self.rnn = nn.GRU(
             input_size=rnn_input_size,
@@ -42,7 +36,6 @@ class SpeechModel(nn.Module):
         )
         self.rnn_layernorm = nn.LayerNorm(rnn_hidden * 2)
 
-        # --- Classifier ---
         self.classifier = nn.Sequential(
             nn.Linear(rnn_hidden * 2, rnn_hidden),
             nn.ReLU(),
@@ -51,38 +44,19 @@ class SpeechModel(nn.Module):
         )
 
     def forward(self, spectrogram, spectrogram_length, **batch):
-        """
-        Args:
-            spectrogram: [B, n_feats, T]
-        Returns:
-            dict with log_probs [B, T', n_tokens] and log_probs_length
-        """
-        # Добавляем channel dimension
-        x = spectrogram.unsqueeze(1)  # [B, 1, n_feats, T]
-
-        # --- Conv frontend ---
-        x = self.conv(x)  # [B, 128, n_feats', T']
-
-        # Подготовка к RNN
+        x = spectrogram.unsqueeze(1)
+        x = self.conv(x)
         B, C, L, T = x.size()
-        x = x.permute(0, 3, 1, 2)  # [B, T, C, L]
-        x = x.contiguous().view(B, T, C * L)  # [B, T, features]
-
-        # --- RNN ---
+        x = x.permute(0, 3, 1, 2)
+        x = x.contiguous().view(B, T, C * L)
         x, _ = self.rnn(x)
         x = self.rnn_layernorm(x)
-
-        # --- Classifier ---
         logits = self.classifier(x)
         log_probs = F.log_softmax(logits, dim=-1)
-
-        # Длина последовательности после Conv
         out_lengths = self.transform_input_lengths(spectrogram_length)
-
         return {"log_probs": log_probs, "log_probs_length": out_lengths}
 
     def transform_input_lengths(self, input_lengths):
-        # два Conv слоя со stride=2 → длина уменьшается в 4 раза
         for _ in range(2):
             input_lengths = (input_lengths + 1) // 2
         return input_lengths
@@ -94,5 +68,4 @@ class SpeechModel(nn.Module):
         info += f"\nAll parameters: {all_params: n}"
         info += f"\nTrainable parameters: {trainable: n}"
         info += f"\nConv output feats: {self._n_feats_out}"
-
         return info
